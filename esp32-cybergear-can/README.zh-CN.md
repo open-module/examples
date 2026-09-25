@@ -242,4 +242,4 @@ Motion 固件在**每次启动**时都可能执行这套流程，包括复位或
 - 60 秒零输出 CAN 链路压力测试开关，默认关闭；
 - 360° 往返 Motion 显式开关（单程 10 秒），默认关闭。
 
-板卡原理图和器件数据手册见 [xbot 硬件资料](https://github.com/miclle/xbot/tree/main/hardware/SN65HVD230-CAN-Board)。
+板卡原理图和器件数据手册见本仓库的 [SN65HVD230 板卡资料](../hardware/SN65HVD230-CAN-Board/)。

@@ -9,3 +9,7 @@
 ## 例程
 
 - [`esp32-cybergear-can/`](esp32-cybergear-can/) — ESP32-S3、SN65HVD230 与 CyberGear 的 1 Mbit/s CAN 实体实验。
+
+## 硬件资料
+
+- [`hardware/SN65HVD230-CAN-Board/`](hardware/SN65HVD230-CAN-Board/) — SN65HVD230 收发器板原理图、TI 数据手册、引脚、终端和使用限制。

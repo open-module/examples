@@ -9,3 +9,7 @@ Each example lives in its own top-level directory and documents its dependencies
 ## Examples
 
 - [`esp32-cybergear-can/`](esp32-cybergear-can/) — ESP32-S3, SN65HVD230, and CyberGear physical 1 Mbit/s CAN experiment.
+
+## Hardware references
+
+- [`hardware/SN65HVD230-CAN-Board/`](hardware/SN65HVD230-CAN-Board/) — SN65HVD230 transceiver-board schematic, TI datasheet, pinout, termination, and operating limits.

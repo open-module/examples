@@ -162,4 +162,4 @@ The serial log must show a matching device ID, Reset mode after stop, Motor mode
 
 Disconnect 24 V immediately on timeout, invalid feedback mode, speed/feedback-torque/tracking-error/combined-effort guard rejection, unconfirmed abnormal stop, fatal TWAI alert, bus-off, motor fault/warning, temperature limit, unexpected motion, noise, vibration, or current.
 
-The board schematic and component datasheet are maintained in the [xbot hardware references](https://github.com/miclle/xbot/tree/main/hardware/SN65HVD230-CAN-Board).
+The board schematic and component datasheet are maintained in the local [SN65HVD230 board references](../hardware/SN65HVD230-CAN-Board/).
