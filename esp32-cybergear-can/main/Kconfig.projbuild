@@ -1,0 +1,59 @@
+menu "CyberGear CAN example"
+
+    config CYBERGEAR_MOTOR_ID
+        int "CyberGear motor CAN ID"
+        range 0 255
+        default 127
+        help
+            Target CyberGear motor CAN ID. A factory-default motor normally uses 127 (0x7F).
+
+    config CYBERGEAR_HOST_ID
+        int "ESP32 host CAN ID"
+        range 0 255
+        default 253
+        help
+            Host CAN ID placed in enable, stop, and feedback frames. The example default is 253 (0xFD).
+
+    config CYBERGEAR_TWAI_TX_GPIO
+        int "TWAI TX GPIO"
+        range 0 48
+        default 4
+
+    config CYBERGEAR_TWAI_RX_GPIO
+        int "TWAI RX GPIO"
+        range 0 48
+        default 5
+
+    config CYBERGEAR_RUN_LINK_SOAK_TEST
+        bool "Run a 60-second zero-effort CAN link soak test"
+        default n
+        help
+            Diagnostic mode for intermittent CAN receive errors. It keeps the measured initial
+            position as the target and sends 50 Hz control frames for 60 seconds with desired
+            velocity, feed-forward torque, Kp, and Kd all zero. Existing feedback, tracking,
+            temperature, and fatal TWAI checks remain active. This mode does not command motion,
+            but the motor is enabled during the test and software checks do not replace a physical
+            power cutoff. Keep the explicit motion test disabled while collecting a link-soak log.
+
+    config CYBERGEAR_RUN_MOTION_TEST
+        bool "Explicitly allow the 360-degree out-and-back test (10 seconds per leg)"
+        default n
+        help
+            WARNING: enabling this option permits physical motor movement. Secure and unload the motor,
+            use a current-limited 24 V supply, verify CAN termination, and keep an emergency power cutoff
+            within reach. The default build performs communication and zero-effort validation only.
+            After 500 ms of zero effort, capture the measured origin, ramp +2pi rad over 10 seconds
+            (negative near the positive protocol limit), return over 10 seconds, then stop once.
+            Clear the full-turn sweep, prevent cable winding, and supervise the approximately 20-second test.
+            Absolute speed must stay below 0.5 rad/s during zero effort and 1.0 rad/s during motion;
+            absolute position error relative to the current target must stay below 0.10 rad.
+            Abort if position differs from the current trajectory target by 0.10 rad or more.
+            Desired velocity follows the signed trajectory slope (+/-0.628 rad/s); feed-forward
+            torque remains zero. Kp=90.0 and Kd=1.0 increase effort only when tracking error or
+            velocity error appears; they are not hard actual speed or torque limits. Strict
+            feedback-torque trips are 1.0 N m during zero effort and 10.0 N m during Motion;
+            before each transmission, the combined feed-forward, position-error, and velocity-error
+            controller estimate must also remain strictly below the phase's torque threshold.
+            These are software checks, not motor current/torque limiters. All thresholds are provisional.
+
+endmenu
