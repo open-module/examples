@@ -1,6 +1,6 @@
 # ESP32-S3 + CyberGear CAN example
 
-This is an advanced developer experiment, not an xbot Robot Bus V1 implementation. Keep its vendor-specific 1 Mbit/s protocol, 24 V power boundary, and acceptance procedure separate from the 250 kbit/s Robot Bus specifications and beginner-facing APIs.
+This is an advanced developer experiment. Keep its vendor-specific 1 Mbit/s protocol, 24 V power boundary, and acceptance procedure separate from incompatible CAN networks and beginner-facing APIs.
 
 When changing this example:
 

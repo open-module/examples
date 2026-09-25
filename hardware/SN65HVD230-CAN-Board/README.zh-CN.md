@@ -7,7 +7,7 @@
 - [`SN65HVD230-CAN-Board-Schematic.pdf`](SN65HVD230-CAN-Board-Schematic.pdf) - 板级原理图。
 - [`SN65HVD230-CAN-Board_Datasheets.pdf`](SN65HVD230-CAN-Board_Datasheets.pdf) - SN65HVD230/231/232 数据手册。
 
-该板适合开发者进行短线 CAN/TWAI 实验，但不是 xbot Robot Bus V1 的参考 Controller / Hub 硬件。
+该板适合开发者进行短线 CAN/TWAI 实验，但不是可直接用于生产的控制器或集线器参考设计。
 
 ## 原理图事实
 
@@ -34,7 +34,7 @@
 - 固定终端意味着该板应放在总线端点；不能在一条总线上任意并联多个该板。
 - SN65HVD230 器件标称支持最高 1 Mbit/s，但线长、拓扑、终端和 `RS=10 kΩ` 的实际波形仍需在目标硬件上验证。
 - CyberGear 实验现显式使用 1 Mbit/s、每 bit 20 个时间量子、80% 采样点，并提供可选的 60 秒、50 Hz 零输出链路压力测试。通过该测试只代表本次台架链路运行正常，不能证明收发器波形裕量。
-- 该板不提供 xbot Robot Bus 的 12 V 配电、受控终端、误接保护或面向初学者的标准连接器。
+- 该板不提供配电、受控终端、误接保护或面向初学者的标准连接器。
 
 相关实体测试示例见 [`open-module/examples/esp32-cybergear-can`](https://github.com/open-module/examples/tree/main/esp32-cybergear-can)。
 

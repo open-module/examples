@@ -14,7 +14,7 @@ SN65HVD230 CAN 收发器板
 CyberGear 微电机（独立 24 V 供电）
 ```
 
-它使用 CyberGear 厂商协议：Classical CAN、1 Mbit/s、29 位扩展帧。ESP32-S3 时序显式使用每 bit 20 个时间量子、80% 采样点，与已正常工作的 STM32 对照实现一致，不再沿用 ESP-IDF 在 ESP32-S3 上的默认时序。它不是 xbot Robot Bus V1 示例，不能与 250 kbit/s Robot Bus 节点直接共用同一条 CAN 总线。
+它使用 CyberGear 厂商协议：Classical CAN、1 Mbit/s、29 位扩展帧。ESP32-S3 时序显式使用每 bit 20 个时间量子、80% 采样点，与已正常工作的 STM32 对照实现一致，不再沿用 ESP-IDF 在 ESP32-S3 上的默认时序。该协议与 250 kbit/s CAN 网络不兼容，不能直接共用同一条总线。
 
 ## 安全边界
 

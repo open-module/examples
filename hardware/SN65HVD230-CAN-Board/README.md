@@ -7,7 +7,7 @@ This directory maintains the board schematic and TI component datasheet used by 
 - [`SN65HVD230-CAN-Board-Schematic.pdf`](SN65HVD230-CAN-Board-Schematic.pdf) - board-level schematic.
 - [`SN65HVD230-CAN-Board_Datasheets.pdf`](SN65HVD230-CAN-Board_Datasheets.pdf) - SN65HVD230/231/232 datasheet.
 
-The board is suitable for short developer CAN/TWAI experiments. It is not the xbot Robot Bus V1 Controller / Hub reference hardware.
+The board is suitable for short developer CAN/TWAI experiments. It is not a production-ready controller or hub reference design.
 
 ## Schematic facts
 
@@ -34,7 +34,7 @@ Other board configuration:
 - The fixed terminator places this board at a bus endpoint; do not arbitrarily parallel several of these boards on one bus.
 - The SN65HVD230 device is rated for signaling up to 1 Mbit/s, but the target wiring, topology, termination, and actual `RS=10 kohm` waveform still require hardware validation.
 - The CyberGear experiment now uses an explicit 1 Mbit/s, 20-time-quanta, 80% sample-point controller timing and offers an opt-in 60-second zero-effort 50 Hz link soak. Passing it validates only that specific bench run; it does not prove the transceiver waveform margin.
-- This board does not provide Robot Bus 12 V distribution, managed termination, miswiring protection, or a beginner-facing keyed connector.
+- This board does not provide power distribution, managed termination, miswiring protection, or a beginner-facing keyed connector.
 
 See [`open-module/examples/esp32-cybergear-can`](https://github.com/open-module/examples/tree/main/esp32-cybergear-can) for the related physical test example.
 

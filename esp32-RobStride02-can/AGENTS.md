@@ -1,6 +1,6 @@
 # ESP32-S3 + RobStride RS02 CAN example
 
-This is an advanced 48 V actuator experiment, not an xbot Robot Bus V1 implementation. Keep its RS02-specific 1 Mbit/s protocol and safety boundary separate from 250 kbit/s Robot Bus examples.
+This is an advanced 48 V actuator experiment. Keep its RS02-specific 1 Mbit/s protocol and safety boundary separate from incompatible CAN examples.
 
 When changing this example:
 

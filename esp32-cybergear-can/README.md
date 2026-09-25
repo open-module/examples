@@ -4,7 +4,7 @@
 
 This standalone ESP-IDF example is intended to validate a physical ESP32-S3-DevKitC-1 N16R8, SN65HVD230 transceiver, and CyberGear motor link.
 
-It uses the vendor protocol: Classical CAN at 1 Mbit/s with 29-bit extended identifiers. The ESP32-S3 timing is explicit: 20 time quanta per bit with an 80% sample point, matching the working STM32 comparison rather than the ESP-IDF ESP32-S3 default timing. It is not an xbot Robot Bus V1 example and cannot share a CAN bus with 250 kbit/s Robot Bus nodes.
+It uses the vendor protocol: Classical CAN at 1 Mbit/s with 29-bit extended identifiers. The ESP32-S3 timing is explicit: 20 time quanta per bit with an 80% sample point, matching the working STM32 comparison rather than the ESP-IDF ESP32-S3 default timing. This protocol is incompatible with 250 kbit/s CAN networks and must not share their bus.
 
 ## Safety boundary
 
