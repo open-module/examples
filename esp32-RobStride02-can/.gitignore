@@ -7,3 +7,4 @@
 !/sdkconfig.defaults
 !/sdkconfig.link-soak.defaults
 !/sdkconfig.motion-test.defaults
+!/sdkconfig.web-console.defaults

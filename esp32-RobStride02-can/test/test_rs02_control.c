@@ -157,14 +157,33 @@ static void test_motion_feedback_and_effort_guards(void)
     feedback = safe_feedback();
     feedback.velocity_rad_s = RS02_MOTION_SPEED_GUARD_RAD_S;
     CHECK(!rs02_motion_feedback_is_safe(&feedback, 0.0f));
+    feedback.velocity_rad_s = 3.39f;
+    CHECK(rs02_motion_feedback_is_safe_with_limits(&feedback, 0.0f, 1.0f, 3.4f));
+    feedback.velocity_rad_s = 3.4f;
+    CHECK(!rs02_motion_feedback_is_safe_with_limits(&feedback, 0.0f, 1.0f, 3.4f));
+    CHECK(!rs02_motion_feedback_is_safe_with_limits(&feedback, 0.0f, 1.0f, 33.01f));
     feedback = safe_feedback();
     feedback.torque_nm = RS02_MOTION_TORQUE_GUARD_NM;
     CHECK(!rs02_motion_feedback_is_safe(&feedback, 0.0f));
 
     feedback = safe_feedback();
+    feedback.torque_nm = 6.49f;
+    CHECK(rs02_motion_feedback_is_safe_with_torque_limit(&feedback, 0.0f, 6.0f));
+    feedback.torque_nm = 6.5f;
+    CHECK(!rs02_motion_feedback_is_safe_with_torque_limit(&feedback, 0.0f, 6.0f));
+    CHECK(!rs02_motion_feedback_is_safe_with_torque_limit(&feedback, 0.0f, 14.01f));
+
+    feedback = safe_feedback();
     CHECK(!rs02_motion_effort_is_safe(&feedback, 0.09f, 0.0f, &estimate));
     CHECK(estimate > RS02_MOTION_EFFORT_GUARD_NM);
     CHECK(!rs02_motion_effort_is_safe(&feedback, 0.0f, 0.0f, NULL));
+
+    feedback = safe_feedback();
+    CHECK(rs02_motion_effort_is_safe_with_limit(&feedback, 0.04f, 0.0f, 0.5f, &estimate));
+    CHECK(!rs02_motion_effort_is_safe_with_limit(&feedback, 0.05f, 0.0f, 0.5f, &estimate));
+    CHECK(!rs02_motion_effort_is_safe_with_limit(&feedback, 0.01f, 0.0f, 0.0f, &estimate));
+    CHECK(rs02_motion_effort_is_safe_with_limit(&feedback, 0.01f, 0.0f, 6.0f, &estimate));
+    CHECK(!rs02_motion_effort_is_safe_with_limit(&feedback, 0.01f, 0.0f, 14.01f, &estimate));
 
     feedback = safe_feedback();
     feedback.position_rad = 0.03f;

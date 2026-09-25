@@ -50,4 +50,28 @@ menu "RobStride RS02 CAN example"
             1.0 N m, tracking error at 0.075 rad, or endpoint error at 0.035 rad. These are
             software observations and estimates, not certified or hardware safety limits.
 
+    config RS02_RUN_WEB_CONSOLE
+        bool "Run the Wi-Fi bench-test web console"
+        depends on !RS02_RUN_LINK_SOAK_TEST && !RS02_RUN_MOTION_TEST
+        default n
+        help
+            Start a WPA2 SoftAP and self-hosted control page at 192.168.4.1. The page can
+            prepare an absolute 0-360 degree load-side target referenced to the encoder
+            origin, travel time, a 0.3-33.0 rad/s software speed guard, and a 0.1-14.0 N m
+            temporary motor torque limit. A no-motion preflight reads mechPos and computes
+            only the signed difference from the current single-turn angle to the requested
+            target. Server-side validation keeps the RS02 position-command span and adds
+            0.25 rad/s between theoretical smoothstep peak speed and the derived software
+            speed guard. Slider changes run preflight automatically, but motion still requires a
+            separate confirmation click within 30 seconds. Reset and page refresh do not
+            command motion. The web profile stops at its target instead of returning.
+
+    config RS02_WEB_AP_PASSWORD
+        string "Web-console WPA2 password"
+        depends on RS02_RUN_WEB_CONSOLE
+        default "rs02-bench"
+        help
+            WPA2 password for the RS02-BENCH-xxxx SoftAP. It must contain 8 to 63 characters.
+            An explicit confirmation click is still required; Wi-Fi authentication is not a safety control.
+
 endmenu

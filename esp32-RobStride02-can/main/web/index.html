@@ -1,0 +1,657 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#171813">
+  <title>RS02 Bench Console</title>
+  <style>
+    :root {
+      --ink: #171813;
+      --paper: #eee9dc;
+      --paper-2: #e2dccd;
+      --signal: #f25f29;
+      --signal-dark: #b93812;
+      --safe: #1f7a58;
+      --warn: #9d5b00;
+      --fault: #b42318;
+      --line: rgba(23, 24, 19, .2);
+      --muted: #69675f;
+      --shadow: 0 18px 55px rgba(23, 24, 19, .14);
+    }
+
+    * { box-sizing: border-box; }
+    html { background: var(--ink); }
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      background:
+        linear-gradient(rgba(23, 24, 19, .035) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(23, 24, 19, .035) 1px, transparent 1px),
+        var(--paper);
+      background-size: 28px 28px;
+    }
+
+    button, input { font: inherit; }
+
+    .topline {
+      height: 9px;
+      background: repeating-linear-gradient(135deg, var(--signal) 0 16px, var(--ink) 16px 32px);
+    }
+
+    .shell {
+      width: min(1160px, calc(100% - 32px));
+      margin: 0 auto;
+      padding: 34px 0 48px;
+    }
+
+    header {
+      display: flex;
+      align-items: end;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 28px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--ink);
+    }
+
+    .eyebrow, .micro, .unit, .state-code {
+      font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+
+    .eyebrow { font-size: 12px; color: var(--signal-dark); font-weight: 800; }
+    h1 { margin: 5px 0 0; font-size: clamp(34px, 6vw, 74px); line-height: .92; letter-spacing: -.055em; }
+    .header-note { max-width: 330px; margin: 0; color: var(--muted); line-height: 1.55; font-size: 14px; }
+
+    .status-rail {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(260px, .75fr);
+      border: 2px solid var(--ink);
+      background: rgba(255,255,255,.22);
+      box-shadow: var(--shadow);
+      margin-bottom: 22px;
+    }
+
+    .status-main { padding: 24px; min-width: 0; }
+    .status-side { padding: 24px; border-left: 2px solid var(--ink); background: var(--ink); color: var(--paper); }
+
+    .state-row { display: flex; align-items: center; gap: 12px; margin-bottom: 13px; }
+    .state-dot { width: 13px; height: 13px; border-radius: 50%; background: var(--muted); box-shadow: 0 0 0 5px rgba(105,103,95,.14); }
+    .state-dot.armed, .state-dot.preparing { background: var(--warn); box-shadow: 0 0 0 5px rgba(157,91,0,.16); }
+    .state-dot.running { background: var(--signal); box-shadow: 0 0 0 5px rgba(242,95,41,.18); animation: pulse 1s infinite; }
+    .state-dot.complete { background: var(--safe); box-shadow: 0 0 0 5px rgba(31,122,88,.16); }
+    .state-dot.fault { background: var(--fault); box-shadow: 0 0 0 5px rgba(180,35,24,.16); }
+    @keyframes pulse { 50% { transform: scale(.72); opacity: .72; } }
+
+    .state-name { font-size: 26px; font-weight: 800; letter-spacing: -.02em; }
+    .message { margin: 0; min-height: 48px; max-width: 720px; line-height: 1.5; color: #4e4d47; }
+
+    .countdown { display: flex; align-items: baseline; gap: 10px; }
+    .countdown strong { font-size: 52px; line-height: 1; color: var(--signal); font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
+    .countdown span { color: #bab4a5; }
+    .boot-hint { margin-top: 14px; color: #d8d1c1; line-height: 1.45; font-size: 14px; }
+
+    .progress-track { height: 8px; margin-top: 20px; background: var(--paper-2); overflow: hidden; border: 1px solid var(--ink); }
+    .progress-fill { width: 0; height: 100%; background: var(--signal); transition: width .2s linear; }
+
+    .grid { display: grid; grid-template-columns: minmax(300px, .88fr) minmax(0, 1.12fr); gap: 22px; }
+    .panel { border: 2px solid var(--ink); background: rgba(255,255,255,.28); box-shadow: var(--shadow); }
+    .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+    .panel-head h2 { margin: 0; font-size: 15px; text-transform: uppercase; letter-spacing: .08em; }
+    .panel-body { padding: 20px; }
+
+    .field { margin-bottom: 20px; }
+    .field:last-of-type { margin-bottom: 14px; }
+    label { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; font-weight: 800; margin-bottom: 8px; }
+    label small { color: var(--muted); font-weight: 500; }
+    .input-wrap { display: grid; grid-template-columns: 1fr auto; border: 2px solid var(--ink); background: var(--paper); }
+    input { width: 100%; min-width: 0; padding: 12px 14px; border: 0; outline: 0; background: transparent; font-size: 24px; font-weight: 800; font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; }
+    input:focus { box-shadow: inset 0 0 0 3px var(--signal); }
+    .unit { display: grid; place-items: center; min-width: 70px; padding: 0 12px; border-left: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+
+    .position-window { margin: 0 0 20px; border: 1px solid var(--line); background: rgba(255,255,255,.2); }
+    .window-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 12px; border-bottom: 1px solid var(--line); }
+    .window-head span { color: var(--muted); font-size: 11px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; }
+    .window-head strong { color: var(--warn); font: 800 11px/1 ui-monospace, monospace; }
+    .position-window.ready .window-head strong { color: var(--safe); }
+    .position-window.blocked .window-head strong { color: var(--fault); }
+    .window-values { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); }
+    .window-values div { padding: 10px 12px; background: var(--paper); }
+    .window-values span { display: block; margin-bottom: 4px; color: var(--muted); font-size: 10px; }
+    .window-values strong { font: 800 14px/1.2 ui-monospace, monospace; }
+    .window-hint { margin: 0; padding: 9px 12px; color: var(--muted); font-size: 11px; line-height: 1.45; }
+    .position-window.blocked .window-hint { color: var(--fault); font-weight: 700; }
+
+    .range-control { padding: 16px; border: 2px solid var(--ink); background: var(--paper); }
+    .range-readout { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; margin-bottom: 13px; }
+    .range-readout output { font: 900 30px/1 ui-monospace, "SFMono-Regular", Menlo, monospace; }
+    .range-zone { color: var(--safe); font-size: 12px; font-weight: 900; text-transform: uppercase; letter-spacing: .07em; }
+    .range-zone.caution { color: var(--warn); }
+    .range-zone.high { color: var(--fault); }
+    input[type="range"] { appearance: none; display: block; height: 28px; padding: 0; cursor: pointer; }
+    input[type="range"]::-webkit-slider-runnable-track { height: 8px; border: 1px solid var(--ink); background: linear-gradient(90deg, var(--safe) 0 7%, #d39b24 7% 43%, var(--fault) 43% 100%); }
+    input[type="range"]::-webkit-slider-thumb { appearance: none; width: 22px; height: 28px; margin-top: -11px; border: 2px solid var(--ink); border-radius: 0; background: var(--paper); box-shadow: 3px 3px 0 var(--ink); }
+    input[type="range"]::-moz-range-track { height: 8px; border: 1px solid var(--ink); background: linear-gradient(90deg, var(--safe) 0 7%, #d39b24 7% 43%, var(--fault) 43% 100%); }
+    input[type="range"]::-moz-range-thumb { width: 22px; height: 28px; border: 2px solid var(--ink); border-radius: 0; background: var(--paper); box-shadow: 3px 3px 0 var(--ink); }
+    input.angle-slider::-webkit-slider-runnable-track,
+    input.duration-slider::-webkit-slider-runnable-track { background: linear-gradient(90deg, var(--ink), var(--signal)); }
+    input.angle-slider::-moz-range-track,
+    input.duration-slider::-moz-range-track { background: linear-gradient(90deg, var(--ink), var(--signal)); }
+    .range-scale { display: flex; justify-content: space-between; gap: 8px; margin-top: 7px; color: var(--muted); font: 700 10px/1.3 ui-monospace, monospace; }
+    .duration-scale { position: relative; display: block; height: 13px; }
+    .duration-scale span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
+    .duration-scale span:first-child { transform: none; }
+    .duration-scale span:last-child { transform: translateX(-100%); }
+
+    .calculation { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; margin: 18px 0; border: 1px solid var(--line); background: var(--line); }
+    .calc-item { padding: 12px; background: var(--paper); }
+    .calc-item span { display: block; color: var(--muted); font-size: 11px; margin-bottom: 4px; }
+    .calc-item strong { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 16px; }
+
+    .validation { min-height: 42px; margin: 0 0 14px; color: var(--muted); font-size: 13px; line-height: 1.45; }
+    .validation.invalid { color: var(--fault); font-weight: 700; }
+
+    .actions { display: grid; grid-template-columns: 1fr auto; gap: 10px; }
+    .button { border: 2px solid var(--ink); padding: 13px 16px; cursor: pointer; font-weight: 900; letter-spacing: .02em; transition: transform .12s ease, box-shadow .12s ease, opacity .12s ease; }
+    .button:hover:not(:disabled) { transform: translate(-2px,-2px); box-shadow: 4px 4px 0 var(--ink); }
+    .button:active:not(:disabled) { transform: translate(0,0); box-shadow: none; }
+    .button:disabled { cursor: not-allowed; opacity: .38; }
+    .button-primary { background: var(--signal); color: var(--ink); }
+    .button-stop { background: var(--ink); color: var(--paper); min-width: 94px; }
+
+    .telemetry { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; background: var(--line); }
+    .metric { min-height: 136px; padding: 20px; background: var(--paper); position: relative; overflow: hidden; }
+    .metric::after { content: ""; position: absolute; right: -24px; bottom: -24px; width: 68px; height: 68px; border: 14px solid rgba(23,24,19,.04); border-radius: 50%; }
+    .metric .micro { color: var(--muted); font-size: 10px; }
+    .metric strong { display: block; margin-top: 19px; font: 800 clamp(29px, 5vw, 45px)/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: -.05em; }
+    .metric .suffix { margin-left: 5px; font-size: 12px; color: var(--muted); letter-spacing: 0; }
+
+    .safety { margin-top: 22px; padding: 18px 20px; border-left: 7px solid var(--signal); background: var(--ink); color: var(--paper); display: grid; grid-template-columns: auto 1fr; gap: 15px; align-items: start; }
+    .safety-mark { color: var(--signal); font: 900 24px/1 ui-monospace, monospace; }
+    .safety p { margin: 0; color: #d8d1c1; line-height: 1.5; font-size: 13px; }
+    .safety strong { color: var(--paper); }
+
+    .modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 18px; background: rgba(23,24,19,.82); }
+    .modal[hidden] { display: none; }
+    .modal-card { width: min(620px, 100%); border: 2px solid var(--ink); background: var(--paper); box-shadow: 12px 12px 0 var(--signal); }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 2px solid var(--ink); }
+    .modal-head h2 { margin: 0; font-size: 17px; letter-spacing: .04em; }
+    .icon-button { border: 0; background: transparent; cursor: pointer; font-size: 25px; line-height: 1; }
+    .modal-body { padding: 20px; }
+    .run-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px; margin-bottom: 18px; border: 1px solid var(--line); background: var(--line); }
+    .run-summary div { padding: 12px; background: var(--paper-2); }
+    .run-summary span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 10px; text-transform: uppercase; }
+    .run-summary strong { font-family: ui-monospace, monospace; }
+    .risk-ack { display: flex; align-items: flex-start; justify-content: flex-start; gap: 10px; margin: 0 0 16px; padding: 12px; border: 1px solid var(--fault); color: var(--fault); font-size: 13px; line-height: 1.45; }
+    .risk-ack input { width: 18px; height: 18px; margin: 1px 0 0; flex: 0 0 auto; accent-color: var(--fault); }
+    .confirm-button { width: 100%; background: var(--signal); color: var(--ink); }
+    .modal-note { margin: 14px 0 0; color: var(--muted); font-size: 12px; line-height: 1.5; }
+
+    @media (max-width: 800px) {
+      .shell { width: min(100% - 20px, 680px); padding-top: 24px; }
+      header { align-items: start; flex-direction: column; }
+      .status-rail, .grid { grid-template-columns: 1fr; }
+      .status-side { border-left: 0; border-top: 2px solid var(--ink); }
+      .metric { min-height: 118px; }
+    }
+
+    @media (max-width: 480px) {
+      .telemetry { grid-template-columns: 1fr; }
+      .calculation { grid-template-columns: 1fr; }
+      .run-summary { grid-template-columns: repeat(2, 1fr); }
+      .actions { grid-template-columns: 1fr; }
+      .button-stop { min-width: 0; }
+      .status-main, .status-side, .panel-body { padding: 17px; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <div class="topline" aria-hidden="true"></div>
+  <main class="shell">
+    <header>
+      <div>
+        <div class="eyebrow">ESP32-S3 · CAN 1 Mbit/s · Bench only</div>
+        <h1>RS02<br>运动控制台</h1>
+      </div>
+      <p class="header-note">三个滑块会实时更新并自动校验运动方案。点击“开始测试”后仍需在弹框中确认；刷新页面或复位不会启动电机。</p>
+    </header>
+
+    <section class="status-rail" aria-live="polite">
+      <div class="status-main">
+        <div class="state-row">
+          <span id="stateDot" class="state-dot"></span>
+          <span id="stateName" class="state-name">连接中</span>
+          <span id="stateCode" class="state-code">OFFLINE</span>
+        </div>
+        <p id="message" class="message">正在读取控制器状态…</p>
+        <div class="progress-track" aria-label="测试进度"><div id="progress" class="progress-fill"></div></div>
+      </div>
+      <div class="status-side">
+        <div class="micro">Confirmation window</div>
+        <div class="countdown"><strong id="countdown">—</strong><span>秒</span></div>
+        <div class="boot-hint">状态为“等待确认”时，点击“开始测试”并在弹框中确认。网页停止按钮不是急停。</div>
+      </div>
+    </section>
+
+    <div class="grid">
+      <section class="panel">
+        <div class="panel-head"><h2>测试参数</h2><span class="micro">server validated</span></div>
+        <div class="panel-body">
+          <form id="configForm">
+            <div class="field">
+              <label for="angle">单圈目标角度 <small>相对编码器原点 · 绝对位置</small></label>
+              <div class="range-control">
+                <div class="range-readout"><output id="angleValue" for="angle">60°</output><span class="range-zone">0–360°</span></div>
+                <input id="angle" class="angle-slider" name="angle" type="range" value="60" min="0" max="360" step="1" aria-label="单圈目标角度" required>
+                <div class="range-scale"><span>0°</span><span>90°</span><span>180°</span><span>270°</span><span>360°</span></div>
+              </div>
+            </div>
+            <section id="positionWindow" class="position-window" aria-live="polite">
+              <div class="window-head"><span>单圈运动计划</span><strong id="windowState">自动校验</strong></div>
+              <div class="window-values">
+                <div><span>当前角度</span><strong id="windowOrigin">—</strong></div>
+                <div><span>运动方向</span><strong id="windowMinimum">—</strong></div>
+                <div><span>目标角度</span><strong id="windowMaximum">—</strong></div>
+              </div>
+              <p id="windowHint" class="window-hint">调整任一滑块后，控制器会保持电机停止、读取负载端单圈角度，并计算从当前角度到绝对目标角度的实际位移。</p>
+            </section>
+            <div class="field">
+              <label for="duration">单程时间 <small>台架范围 · 自动计算速度保护</small></label>
+              <div class="range-control">
+                <div class="range-readout"><output id="durationValue" for="duration">3.0 s</output><span id="durationZone" class="range-zone">常规测试</span></div>
+                <input id="duration" class="duration-slider" name="duration" type="range" value="3" min="0.3" max="30" step="0.1" aria-label="单程时间" required>
+                <div class="range-scale duration-scale"><span style="left:0">0.3 s</span><span style="left:16%">5 s</span><span style="left:49.5%">15 s</span><span style="left:100%">30 s</span></div>
+              </div>
+            </div>
+            <div class="field">
+              <label for="torque">转矩上限 <small>0x700B · 不是恒定输出转矩</small></label>
+              <div class="range-control">
+                <div class="range-readout"><output id="torqueValue" for="torque">1.0 N·m</output><span id="torqueZone" class="range-zone">低转矩</span></div>
+                <input id="torque" name="torque" type="range" value="1" min="0.1" max="14" step="0.1" required>
+                <div class="range-scale"><span>0.1</span><span>6 额定负载</span><span>14 参数上限</span></div>
+              </div>
+            </div>
+
+            <div class="calculation" aria-label="轨迹计算结果">
+              <div class="calc-item"><span>方向</span><strong id="direction">正向</strong></div>
+              <div class="calc-item"><span>目标峰值</span><strong id="peakSpeed">0.524</strong></div>
+              <div class="calc-item"><span>预计总时长</span><strong id="totalTime">3.7 s</strong></div>
+            </div>
+            <p id="validation" class="validation">目标峰值速度会保留 0.25 rad/s 的限速余量。</p>
+
+            <div class="actions">
+              <button id="startTestButton" class="button button-primary" type="submit">开始测试</button>
+              <button id="stopButton" class="button button-stop" type="button">停止</button>
+            </div>
+          </form>
+        </div>
+      </section>
+
+      <section class="panel">
+        <div class="panel-head"><h2>实时遥测</h2><span id="phase" class="micro">NO FEEDBACK</span></div>
+        <div class="telemetry">
+          <div class="metric"><span class="micro">Position</span><strong><span id="position">—</span><span class="suffix">rad</span></strong></div>
+          <div class="metric"><span class="micro">Velocity</span><strong><span id="velocity">—</span><span class="suffix">rad/s</span></strong></div>
+          <div class="metric"><span class="micro">Feedback torque</span><strong><span id="feedbackTorque">—</span><span class="suffix">N·m</span></strong></div>
+          <div class="metric"><span class="micro">Temperature</span><strong><span id="temperature">—</span><span class="suffix">°C</span></strong></div>
+          <div class="metric"><span class="micro">Bus voltage</span><strong><span id="busVoltage">—</span><span class="suffix">V</span></strong></div>
+          <div class="metric"><span class="micro">Fault flags</span><strong><span id="faults">—</span><span class="suffix">HEX</span></strong></div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="safety">
+      <div class="safety-mark">!</div>
+      <p><strong>台架测试边界：</strong>保持电机卸载并固定，确认整个角度范围无干涉，使用限流电源并把实体断电开关放在手边。网页、Wi‑Fi、ESP32 和 CAN 都不能替代实体急停。</p>
+    </aside>
+  </main>
+
+  <div id="startModal" class="modal" hidden role="dialog" aria-modal="true" aria-labelledby="startTitle">
+    <section class="modal-card">
+      <div class="modal-head"><h2 id="startTitle">最终运动确认</h2><button id="closeModal" class="icon-button" type="button" aria-label="关闭">×</button></div>
+      <div class="modal-body">
+        <div class="run-summary">
+          <div><span>目标角度</span><strong id="confirmAngle">—</strong></div>
+          <div><span>单程</span><strong id="confirmDuration">—</strong></div>
+          <div><span>规划方向</span><strong id="confirmDirection">—</strong></div>
+          <div><span>转矩上限</span><strong id="confirmTorque">—</strong></div>
+        </div>
+        <p id="confirmPath" class="modal-note">正在计算绝对位置路径…</p>
+        <label id="riskAckLabel" class="risk-ack" hidden><input id="riskAck" type="checkbox"><span id="riskAckText">我确认电机已卸载并固定，运动范围无干涉，实体断电开关在手边。</span></label>
+        <button id="confirmStart" class="button confirm-button" type="button">确认并启动</button>
+        <p class="modal-note">确认后电机只运动到目标位置，不会自动返回。随后固件发送停止；浏览器心跳中断超过 2 秒也会触发软件停止，但这些都不能替代实体断电。</p>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const fields = { angle: $('angle'), duration: $('duration'), torque: $('torque') };
+    const stateLabels = {
+      idle: '待机', armed: '等待确认', preparing: '自动校验', starting: '启动校验', running: '运动中',
+      complete: '已完成', fault: '已中止'
+    };
+    let controllerState = 'offline';
+    let hasSyncedConfig = false;
+    let statusTimer;
+    let heartbeatTimer;
+    let configSyncTimer;
+    let configRequestInFlight = false;
+    let configDirty = false;
+    let serverConfigKey = '';
+    let startPending = false;
+    let motionPlan;
+    let openDialogWhenArmed = false;
+
+    function configKey(values) {
+      return `${Number(values.angle).toFixed(1)}|${Number(values.duration).toFixed(1)}|${Number(values.torque).toFixed(1)}`;
+    }
+
+    function statusConfigKey(config) {
+      return configKey({
+        angle: Number(config.angle_deg),
+        duration: Number(config.duration_s),
+        torque: Number(config.torque_limit_nm)
+      });
+    }
+
+    function calculate() {
+      const angle = Number(fields.angle.value);
+      const duration = Number(fields.duration.value);
+      const torque = Number(fields.torque.value);
+      const plannedTravel = motionPlan ? Math.abs(motionPlan.signedDelta) : NaN;
+      const peak = 1.5 * plannedTravel * Math.PI / 180 / duration;
+      const speed = Math.max(.3, peak + .26);
+      const validAngle = Number.isFinite(angle) && angle >= 0 && angle <= 360;
+      const validDuration = Number.isFinite(duration) && duration >= .3 && duration <= 30;
+      const validTorque = Number.isFinite(torque) && torque >= .1 && torque <= 14;
+      const validProfileSpeed = !motionPlan || (Number.isFinite(peak) && speed <= 33);
+      const valid = validAngle && validDuration && validTorque && validProfileSpeed;
+
+      $('direction').textContent = motionPlan ? (motionPlan.signedDelta < 0 ? '反向' : motionPlan.signedDelta > 0 ? '正向' : '保持') : '预检决定';
+      $('peakSpeed').textContent = Number.isFinite(peak) ? peak.toFixed(3) : '预检后计算';
+      $('totalTime').textContent = Number.isFinite(duration) ? `${(duration + .7).toFixed(1)} s` : '—';
+      const parametersLocked = startPending || controllerState === 'starting' || controllerState === 'running';
+      Object.values(fields).forEach((field) => { field.disabled = parametersLocked; });
+      const startButton = $('startTestButton');
+      startButton.disabled = !valid || controllerState === 'offline' || controllerState === 'starting' || controllerState === 'running' ||
+        controllerState === 'preparing' || configRequestInFlight;
+      startButton.textContent = ['starting', 'running'].includes(controllerState) ? '测试进行中' :
+        (controllerState === 'preparing' || configRequestInFlight || openDialogWhenArmed) ? '正在校验参数…' : '开始测试';
+      $('angleValue').textContent = Number.isFinite(angle) ? `${angle.toFixed(0)}°` : '—';
+      $('durationValue').textContent = Number.isFinite(duration) ? `${duration.toFixed(1)} s` : '—';
+      const durationZone = duration < 1 ? '高速测试' : duration <= 5 ? '常规测试' : '低速测试';
+      $('durationZone').textContent = durationZone;
+      $('durationZone').className = `range-zone ${duration < 1 ? 'high' : duration <= 2 ? 'caution' : ''}`;
+      $('torqueValue').textContent = Number.isFinite(torque) ? `${torque.toFixed(1)} N·m` : '—';
+      const zone = torque <= 1 ? '低转矩' : torque <= 6 ? '额定区' : '高于额定';
+      $('torqueZone').textContent = zone;
+      $('torqueZone').className = `range-zone ${torque > 6 ? 'high' : torque > 1 ? 'caution' : ''}`;
+      const validation = $('validation');
+      validation.classList.toggle('invalid', !valid);
+      if (!validAngle) validation.textContent = '单圈运动角度必须在 0° 到 360° 之间。';
+      else if (!validDuration) validation.textContent = '单程时间必须在 0.3 到 30.0 秒之间。';
+      else if (!validTorque) validation.textContent = '转矩上限必须在 0.1 到 14.0 N·m 之间。';
+      else if (!validProfileSpeed) validation.textContent = '从当前角度到目标角度的轨迹超过 33 rad/s 协议速度范围，请增加单程时间。';
+      else if (!motionPlan) validation.textContent = '调整后将自动读取单圈编码器角度，并计算到绝对目标角度的实际位移。';
+      else if (speed > .8 && torque <= 1) validation.textContent = `理论峰值 ${peak.toFixed(3)} rad/s，自动保护 ${speed.toFixed(3)} rad/s；当前 1.0 N·m 转矩上限仍可能触发估算出力保护。`;
+      else validation.textContent = `实际位移 ${plannedTravel.toFixed(1)}°，理论峰值 ${peak.toFixed(3)} rad/s；固件自动设置 ${speed.toFixed(3)} rad/s 软件速度保护。`;
+      const windowPanel = $('positionWindow');
+      windowPanel.classList.toggle('ready', Boolean(motionPlan));
+      windowPanel.classList.remove('blocked');
+      if (motionPlan) {
+        const direction = motionPlan.signedDelta < 0 ? '反向' : motionPlan.signedDelta > 0 ? '正向' : '保持';
+        $('windowOrigin').textContent = `${motionPlan.currentAngle.toFixed(2)}°`;
+        $('windowMinimum').textContent = direction;
+        $('windowMaximum').textContent = `${motionPlan.targetAngle.toFixed(2)}°`;
+        $('windowState').textContent = '计划可执行';
+        $('windowHint').textContent = `编码器当前 ${motionPlan.currentAngle.toFixed(1)}°，绝对目标 ${motionPlan.targetAngle.toFixed(1)}°；本次${direction === '保持' ? '无需转动' : `${direction} ${Math.abs(motionPlan.signedDelta).toFixed(1)}°`}。`;
+      } else {
+        $('windowOrigin').textContent = '—';
+        $('windowMinimum').textContent = '—';
+        $('windowMaximum').textContent = '—';
+        $('windowState').textContent = controllerState === 'preparing' || configRequestInFlight ? '自动校验中' : configDirty ? '等待自动校验' : '自动校验';
+        $('windowHint').textContent = controllerState === 'preparing' || configRequestInFlight
+          ? '控制器正保持电机停止，并读取负载端单圈角度来计算绝对目标。'
+          : '调整任一滑块会自动校验；也可以直接点击“开始测试”，完成校验后弹出确认框。';
+      }
+      return { valid, angle, duration, speed, torque };
+    }
+
+    function showStartDialog() {
+      const values = calculate();
+      if (controllerState !== 'armed' || !motionPlan || serverConfigKey !== configKey(values)) return;
+      openDialogWhenArmed = false;
+      $('confirmAngle').textContent = `${values.angle.toFixed(1)}°`;
+      $('confirmDuration').textContent = `${values.duration.toFixed(1)} s`;
+      $('confirmDirection').textContent = motionPlan ? (motionPlan.signedDelta < 0 ? '反向' : motionPlan.signedDelta > 0 ? '正向' : '保持') : '—';
+      $('confirmTorque').textContent = `${values.torque.toFixed(1)} N·m`;
+      $('confirmPath').textContent = motionPlan
+        ? `负载端单圈角度 ${motionPlan.currentAngle.toFixed(2)}° → ${motionPlan.targetAngle.toFixed(2)}°，实际${motionPlan.signedDelta < 0 ? '反向' : motionPlan.signedDelta > 0 ? '正向' : '保持'} ${Math.abs(motionPlan.signedDelta).toFixed(1)}°；到达后停止。`
+        : '尚未取得停止状态单圈计划，不能启动。';
+      const needsAck = motionPlan.requiresRiskAck;
+      $('riskAckLabel').hidden = !needsAck;
+      $('riskAck').checked = false;
+      const riskNotes = [];
+      if (values.speed > .8) riskNotes.push(`速度 ${values.speed.toFixed(2)} rad/s 高于当前实测边界 0.8 rad/s。`);
+      if (values.torque > 6) riskNotes.push('转矩设置高于说明书 6 N·m 额定负载。');
+      else if (values.torque > 1) riskNotes.push('转矩设置高于当前实测的 1 N·m 范围。');
+      $('riskAckText').textContent = `${riskNotes.join('')}我确认电机已卸载并固定、运动范围无干涉，实体断电开关在手边。`;
+      $('confirmStart').disabled = needsAck;
+      $('confirmStart').textContent = '确认并启动';
+      $('startModal').hidden = false;
+      $('confirmStart').focus();
+    }
+
+    function closeStartDialog() {
+      openDialogWhenArmed = false;
+      $('startModal').hidden = true;
+    }
+
+    async function startMotion() {
+      if (startPending || $('confirmStart').disabled || !motionPlan || !motionPlan.planToken) return;
+      const planToken = motionPlan.planToken;
+      const riskAcknowledged = $('riskAckLabel').hidden || $('riskAck').checked;
+      startPending = true;
+      $('confirmStart').disabled = true;
+      $('confirmStart').textContent = '正在启动…';
+      calculate();
+      try {
+        await api('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ plan_token: planToken, risk_acknowledged: riskAcknowledged })
+        });
+        closeStartDialog();
+        await pollStatus();
+      } catch (error) {
+        $('confirmStart').textContent = '启动失败，请重试';
+        $('validation').classList.add('invalid');
+        $('validation').textContent = error.message;
+      } finally {
+        startPending = false;
+        $('confirmStart').disabled = $('riskAckLabel').hidden ? false : !$('riskAck').checked;
+        calculate();
+      }
+    }
+
+    function format(value, digits) {
+      return Number.isFinite(value) ? Number(value).toFixed(digits) : '—';
+    }
+
+    function render(data) {
+      controllerState = data.state || 'offline';
+      if (data.config) serverConfigKey = statusConfigKey(data.config);
+      if (data.config && !hasSyncedConfig) {
+        fields.angle.value = data.config.angle_deg;
+        fields.duration.value = data.config.duration_s;
+        fields.torque.value = data.config.torque_limit_nm;
+        hasSyncedConfig = true;
+      }
+      const localKey = configKey(calculate());
+      const plannedTarget = data.motion_plan ? Number(data.motion_plan.target_angle_deg) : NaN;
+      if (data.motion_plan && data.motion_plan.valid &&
+          serverConfigKey === localKey &&
+          Math.abs(plannedTarget - Number(fields.angle.value)) < .05) {
+        motionPlan = {
+          currentAngle: Number(data.motion_plan.current_angle_deg),
+          targetAngle: plannedTarget,
+          signedDelta: Number(data.motion_plan.signed_delta_deg),
+          planToken: Number(data.plan_token || 0),
+          requiresRiskAck: Boolean(data.risk_ack_required),
+          configKey: localKey
+        };
+      } else {
+        motionPlan = undefined;
+      }
+      $('stateName').textContent = stateLabels[controllerState] || '未连接';
+      $('stateCode').textContent = controllerState.toUpperCase();
+      $('stateDot').className = `state-dot ${controllerState}`;
+      $('message').textContent = data.message || '—';
+      $('phase').textContent = (data.phase || 'no feedback').toUpperCase();
+      $('progress').style.width = `${Math.max(0, Math.min(100, Number(data.progress || 0) * 100))}%`;
+      $('countdown').textContent = data.state === 'armed' ? Math.ceil(Number(data.arm_remaining_ms || 0) / 1000) : '—';
+
+      if (data.has_feedback && data.feedback) {
+        $('position').textContent = format(data.feedback.position_rad, 4);
+        $('velocity').textContent = format(data.feedback.velocity_rad_s, 3);
+        $('feedbackTorque').textContent = format(data.feedback.torque_nm, 3);
+        $('temperature').textContent = format(data.feedback.temperature_c, 1);
+        $('faults').textContent = `0x${Number(data.feedback.faults || 0).toString(16).padStart(2, '0')}`;
+      }
+      $('busVoltage').textContent = format(data.bus_voltage_v, 1);
+      calculate();
+      if (openDialogWhenArmed && controllerState === 'armed' && motionPlan) {
+        showStartDialog();
+      } else if (openDialogWhenArmed && controllerState === 'fault') {
+        openDialogWhenArmed = false;
+        calculate();
+      }
+      if (configDirty && !['preparing', 'starting', 'running'].includes(controllerState) && !configRequestInFlight) {
+        scheduleConfigSync(120);
+      }
+    }
+
+    async function api(path, options = {}) {
+      const response = await fetch(path, { cache: 'no-store', ...options });
+      const body = await response.json();
+      if (!response.ok) {
+        const error = new Error(body.message || `HTTP ${response.status}`);
+        error.status = response.status;
+        throw error;
+      }
+      return body;
+    }
+
+    async function pollStatus() {
+      try {
+        render(await api('/api/status'));
+      } catch (error) {
+        controllerState = 'offline';
+        $('stateName').textContent = '连接中断';
+        $('stateCode').textContent = 'OFFLINE';
+        $('stateDot').className = 'state-dot fault';
+        $('message').textContent = '无法读取 ESP32 状态，请检查 Wi‑Fi 连接。';
+        calculate();
+      }
+    }
+
+    async function heartbeat() {
+      if (!['armed', 'preparing', 'starting', 'running'].includes(controllerState)) return;
+      try { await api('/api/heartbeat', { method: 'POST' }); } catch (_) { /* poller shows loss */ }
+    }
+
+    function scheduleConfigSync(delay = 320) {
+      clearTimeout(configSyncTimer);
+      configSyncTimer = setTimeout(syncConfig, delay);
+    }
+
+    async function syncConfig() {
+      clearTimeout(configSyncTimer);
+      const values = calculate();
+      if (!values.valid || controllerState === 'offline' || ['starting', 'running'].includes(controllerState)) return;
+      if (controllerState === 'preparing' || configRequestInFlight) {
+        scheduleConfigSync(180);
+        return;
+      }
+      const submittedKey = configKey(values);
+      if (controllerState === 'armed' && motionPlan && serverConfigKey === submittedKey) {
+        configDirty = false;
+        if (openDialogWhenArmed) showStartDialog();
+        return;
+      }
+
+      configRequestInFlight = true;
+      calculate();
+      try {
+        await api('/api/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ angle_deg: values.angle, duration_s: values.duration, torque_limit_nm: values.torque })
+        });
+        configDirty = configKey(calculate()) !== submittedKey;
+        await pollStatus();
+      } catch (error) {
+        if (error.status === 409 || controllerState === 'preparing') {
+          configDirty = true;
+          await pollStatus();
+          scheduleConfigSync(180);
+        } else {
+          openDialogWhenArmed = false;
+          configDirty = false;
+          $('validation').classList.add('invalid');
+          $('validation').textContent = error.message;
+        }
+      } finally {
+        configRequestInFlight = false;
+        calculate();
+        if (configDirty) scheduleConfigSync(120);
+      }
+    }
+
+    $('configForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const values = calculate();
+      if (!values.valid || ['starting', 'running'].includes(controllerState)) return;
+      openDialogWhenArmed = true;
+      if (controllerState === 'armed' && motionPlan && serverConfigKey === configKey(values)) {
+        showStartDialog();
+        return;
+      }
+      configDirty = true;
+      await syncConfig();
+    });
+
+    $('closeModal').addEventListener('click', closeStartDialog);
+    $('riskAck').addEventListener('change', () => { $('confirmStart').disabled = !$('riskAck').checked; });
+    $('confirmStart').addEventListener('click', startMotion);
+
+    $('stopButton').addEventListener('click', async () => {
+      $('stopButton').disabled = true;
+      try { await api('/api/stop', { method: 'POST' }); await pollStatus(); }
+      catch (error) { $('message').textContent = error.message; }
+      finally { $('stopButton').disabled = false; }
+    });
+
+    Object.values(fields).forEach((field) => field.addEventListener('input', () => {
+      motionPlan = undefined;
+      openDialogWhenArmed = false;
+      configDirty = true;
+      calculate();
+      scheduleConfigSync();
+    }));
+    calculate();
+    pollStatus();
+    statusTimer = setInterval(pollStatus, 250);
+    heartbeatTimer = setInterval(heartbeat, 500);
+  </script>
+</body>
+</html>

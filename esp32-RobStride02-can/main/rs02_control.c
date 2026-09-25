@@ -104,6 +104,40 @@ bool rs02_motion_sample(
 
 bool rs02_motion_feedback_is_safe(const rs02_feedback_t *feedback, float target_rad)
 {
+    return rs02_motion_feedback_is_safe_with_limits(
+        feedback,
+        target_rad,
+        RS02_MOTION_EFFORT_GUARD_NM,
+        RS02_MOTION_SPEED_GUARD_RAD_S);
+}
+
+bool rs02_motion_feedback_is_safe_with_torque_limit(
+    const rs02_feedback_t *feedback,
+    float target_rad,
+    float torque_limit_nm)
+{
+    return rs02_motion_feedback_is_safe_with_limits(
+        feedback,
+        target_rad,
+        torque_limit_nm,
+        RS02_MOTION_SPEED_GUARD_RAD_S);
+}
+
+bool rs02_motion_feedback_is_safe_with_limits(
+    const rs02_feedback_t *feedback,
+    float target_rad,
+    float torque_limit_nm,
+    float speed_limit_rad_s)
+{
+    if (!isfinite(torque_limit_nm) || torque_limit_nm <= 0.0f ||
+        torque_limit_nm > RS02_MOTION_MAX_CONFIGURED_TORQUE_NM ||
+        !isfinite(speed_limit_rad_s) ||
+        speed_limit_rad_s < RS02_MOTION_MIN_CONFIGURED_SPEED_RAD_S ||
+        speed_limit_rad_s > RS02_MOTION_MAX_CONFIGURED_SPEED_RAD_S) {
+        return false;
+    }
+    const float feedback_torque_guard =
+        fminf(torque_limit_nm + RS02_MOTION_TORQUE_FEEDBACK_MARGIN_NM, RS02_TORQUE_MAX_NM);
     return feedback != NULL && feedback->mode == RS02_MODE_MOTOR &&
            feedback->faults == 0U && position_is_valid(target_rad) &&
            position_is_valid(feedback->position_rad) &&
@@ -111,10 +145,10 @@ bool rs02_motion_feedback_is_safe(const rs02_feedback_t *feedback, float target_
            isfinite(feedback->velocity_rad_s) &&
            feedback->velocity_rad_s >= RS02_VELOCITY_MIN_RAD_S &&
            feedback->velocity_rad_s <= RS02_VELOCITY_MAX_RAD_S &&
-           fabsf(feedback->velocity_rad_s) < RS02_MOTION_SPEED_GUARD_RAD_S &&
+           fabsf(feedback->velocity_rad_s) < speed_limit_rad_s &&
            isfinite(feedback->torque_nm) && feedback->torque_nm >= RS02_TORQUE_MIN_NM &&
            feedback->torque_nm <= RS02_TORQUE_MAX_NM &&
-           fabsf(feedback->torque_nm) < RS02_MOTION_TORQUE_GUARD_NM &&
+           fabsf(feedback->torque_nm) < feedback_torque_guard &&
            isfinite(feedback->temperature_c) && feedback->temperature_c >= -20.0f &&
            feedback->temperature_c < RS02_SOFTWARE_TEMPERATURE_GUARD_C;
 }
@@ -125,6 +159,21 @@ bool rs02_motion_effort_is_safe(
     float desired_velocity_rad_s,
     float *estimated_effort_nm)
 {
+    return rs02_motion_effort_is_safe_with_limit(
+        feedback,
+        target_rad,
+        desired_velocity_rad_s,
+        RS02_MOTION_EFFORT_GUARD_NM,
+        estimated_effort_nm);
+}
+
+bool rs02_motion_effort_is_safe_with_limit(
+    const rs02_feedback_t *feedback,
+    float target_rad,
+    float desired_velocity_rad_s,
+    float effort_limit_nm,
+    float *estimated_effort_nm)
+{
     if (estimated_effort_nm == NULL) {
         return false;
     }
@@ -133,7 +182,8 @@ bool rs02_motion_effort_is_safe(
         !position_is_valid(target_rad) || !position_is_valid(feedback->position_rad) ||
         !isfinite(desired_velocity_rad_s) ||
         desired_velocity_rad_s < RS02_VELOCITY_MIN_RAD_S ||
-        desired_velocity_rad_s > RS02_VELOCITY_MAX_RAD_S ||
+        desired_velocity_rad_s > RS02_VELOCITY_MAX_RAD_S || !isfinite(effort_limit_nm) ||
+        effort_limit_nm <= 0.0f || effort_limit_nm > RS02_MOTION_MAX_CONFIGURED_TORQUE_NM ||
         !isfinite(feedback->velocity_rad_s) ||
         feedback->velocity_rad_s < RS02_VELOCITY_MIN_RAD_S ||
         feedback->velocity_rad_s > RS02_VELOCITY_MAX_RAD_S) {
@@ -144,7 +194,7 @@ bool rs02_motion_effort_is_safe(
         RS02_MOTION_KP * (target_rad - feedback->position_rad) +
         RS02_MOTION_KD * (desired_velocity_rad_s - feedback->velocity_rad_s);
     *estimated_effort_nm = estimate;
-    return isfinite(estimate) && fabsf(estimate) < RS02_MOTION_EFFORT_GUARD_NM;
+    return isfinite(estimate) && fabsf(estimate) < effort_limit_nm;
 }
 
 bool rs02_motion_endpoint_reached(const rs02_feedback_t *feedback, float endpoint_rad)

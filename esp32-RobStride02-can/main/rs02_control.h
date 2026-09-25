@@ -21,6 +21,10 @@ extern "C" {
 #define RS02_MOTION_TORQUE_GUARD_NM 1.5f
 #define RS02_MOTION_MOTOR_TORQUE_LIMIT_NM 1.0f
 #define RS02_MOTION_EFFORT_GUARD_NM 1.0f
+#define RS02_MOTION_MAX_CONFIGURED_TORQUE_NM 14.0f
+#define RS02_MOTION_TORQUE_FEEDBACK_MARGIN_NM 0.5f
+#define RS02_MOTION_MIN_CONFIGURED_SPEED_RAD_S 0.3f
+#define RS02_MOTION_MAX_CONFIGURED_SPEED_RAD_S 33.0f
 #define RS02_MOTION_TRACKING_GUARD_RAD 0.075f
 #define RS02_MOTION_ENDPOINT_ERROR_RAD 0.035f
 
@@ -64,12 +68,30 @@ bool rs02_motion_sample(
 // provisional software trips and are not hardware torque or speed limits.
 bool rs02_motion_feedback_is_safe(const rs02_feedback_t *feedback, float target_rad);
 
+bool rs02_motion_feedback_is_safe_with_torque_limit(
+    const rs02_feedback_t *feedback,
+    float target_rad,
+    float torque_limit_nm);
+
+bool rs02_motion_feedback_is_safe_with_limits(
+    const rs02_feedback_t *feedback,
+    float target_rad,
+    float torque_limit_nm,
+    float speed_limit_rad_s);
+
 // Estimate feed-forward + Kp position error + Kd velocity error and require
 // its magnitude to remain strictly below the configured software guard.
 bool rs02_motion_effort_is_safe(
     const rs02_feedback_t *feedback,
     float target_rad,
     float desired_velocity_rad_s,
+    float *estimated_effort_nm);
+
+bool rs02_motion_effort_is_safe_with_limit(
+    const rs02_feedback_t *feedback,
+    float target_rad,
+    float desired_velocity_rad_s,
+    float effort_limit_nm,
     float *estimated_effort_nm);
 
 bool rs02_motion_endpoint_reached(const rs02_feedback_t *feedback, float endpoint_rad);

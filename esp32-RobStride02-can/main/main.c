@@ -13,8 +13,13 @@
 #include "freertos/task.h"
 
 #include "rs02_control.h"
+#include "rs02_motion_config.h"
 #include "rs02_protocol.h"
 #include "rs02_twai.h"
+
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+#include "rs02_web_console.h"
+#endif
 
 #define TAG "robstride_rs02"
 
@@ -38,6 +43,18 @@
 #define MOTION_TEST_STATUS "ENABLED"
 #else
 #define MOTION_TEST_STATUS "disabled"
+#endif
+
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+#define WEB_CONSOLE_STATUS "ENABLED"
+#else
+#define WEB_CONSOLE_STATUS "disabled"
+#endif
+
+#if CONFIG_RS02_RUN_MOTION_TEST || CONFIG_RS02_RUN_WEB_CONSOLE
+#define MOTION_CAPABLE_BUILD 1
+#else
+#define MOTION_CAPABLE_BUILD 0
 #endif
 
 static const char *reset_reason_name(esp_reset_reason_t reason)
@@ -66,6 +83,15 @@ static const char *reset_reason_name(esp_reset_reason_t reason)
 static uint32_t monotonic_ms(void)
 {
     return (uint32_t)(esp_timer_get_time() / 1000ULL);
+}
+
+static bool control_abort_requested(void)
+{
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+    return rs02_web_console_should_abort();
+#else
+    return false;
+#endif
 }
 
 static void log_bus_status(void)
@@ -186,6 +212,9 @@ static esp_err_t wait_for_device_id(rs02_device_info_t *device)
 {
     const uint32_t start_ms = monotonic_ms();
     while ((uint32_t)(monotonic_ms() - start_ms) < DEVICE_RESPONSE_TIMEOUT_MS) {
+        if (control_abort_requested()) {
+            return ESP_ERR_INVALID_STATE;
+        }
         ESP_RETURN_ON_ERROR(check_bus_alerts(), TAG, "TWAI alert while waiting for device ID");
 
         rs02_frame_t frame = {0};
@@ -210,6 +239,9 @@ static esp_err_t wait_for_feedback(uint32_t timeout_ms, bool log_sample, rs02_fe
 {
     const uint32_t start_ms = monotonic_ms();
     while ((uint32_t)(monotonic_ms() - start_ms) < timeout_ms) {
+        if (control_abort_requested()) {
+            return ESP_ERR_INVALID_STATE;
+        }
         ESP_RETURN_ON_ERROR(check_bus_alerts(), TAG, "TWAI alert while waiting for feedback");
 
         rs02_frame_t frame = {0};
@@ -232,6 +264,9 @@ static esp_err_t wait_for_feedback(uint32_t timeout_ms, bool log_sample, rs02_fe
         if (!base_feedback_is_safe(feedback)) {
             return ESP_FAIL;
         }
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+        rs02_web_console_update_feedback(feedback);
+#endif
         if (log_sample) {
             log_feedback_sample("feedback", feedback);
         }
@@ -244,6 +279,9 @@ static esp_err_t wait_for_parameter_float(uint16_t parameter_index, float *value
 {
     const uint32_t start_ms = monotonic_ms();
     while ((uint32_t)(monotonic_ms() - start_ms) < PARAMETER_RESPONSE_TIMEOUT_MS) {
+        if (control_abort_requested()) {
+            return ESP_ERR_INVALID_STATE;
+        }
         ESP_RETURN_ON_ERROR(check_bus_alerts(), TAG, "TWAI alert while waiting for parameter");
 
         rs02_frame_t frame = {0};
@@ -272,6 +310,9 @@ static esp_err_t wait_for_parameter_u8(uint16_t parameter_index, uint8_t *value)
 {
     const uint32_t start_ms = monotonic_ms();
     while ((uint32_t)(monotonic_ms() - start_ms) < PARAMETER_RESPONSE_TIMEOUT_MS) {
+        if (control_abort_requested()) {
+            return ESP_ERR_INVALID_STATE;
+        }
         ESP_RETURN_ON_ERROR(check_bus_alerts(), TAG, "TWAI alert while waiting for parameter");
 
         rs02_frame_t frame = {0};
@@ -354,15 +395,15 @@ static esp_err_t select_operation_control_mode(void)
     return ESP_OK;
 }
 
-#if CONFIG_RS02_RUN_MOTION_TEST
-static esp_err_t configure_motion_torque_limit(void)
+#if MOTION_CAPABLE_BUILD
+static esp_err_t configure_motion_torque_limit(float requested_limit_nm)
 {
     rs02_frame_t frame = {0};
     if (!rs02_make_parameter_write_float(
             (uint8_t)CONFIG_RS02_MOTOR_ID,
             (uint8_t)CONFIG_RS02_HOST_ID,
             RS02_PARAMETER_TORQUE_LIMIT,
-            RS02_MOTION_MOTOR_TORQUE_LIMIT_NM,
+            requested_limit_nm,
             &frame)) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -381,7 +422,7 @@ static esp_err_t configure_motion_torque_limit(void)
         TAG,
         "torque-limit readback failed");
     if (!isfinite(torque_limit_nm) ||
-        fabsf(torque_limit_nm - RS02_MOTION_MOTOR_TORQUE_LIMIT_NM) > 0.001f) {
+        fabsf(torque_limit_nm - requested_limit_nm) > 0.001f) {
         ESP_LOGE(TAG, "motion torque limit not confirmed: %.3f N m", (double)torque_limit_nm);
         return ESP_ERR_INVALID_STATE;
     }
@@ -389,6 +430,7 @@ static esp_err_t configure_motion_torque_limit(void)
              (double)torque_limit_nm);
     return ESP_OK;
 }
+
 #endif
 
 static esp_err_t send_stop(bool clear_fault)
@@ -473,6 +515,10 @@ static esp_err_t run_zero_effort_phase(rs02_feedback_t *feedback)
     uint32_t next_log_ms = 0U;
     TickType_t last_wake = xTaskGetTickCount();
     for (;;) {
+        if (control_abort_requested()) {
+            ESP_LOGW(TAG, "zero-effort phase cancelled by the web-console safety gate");
+            return ESP_ERR_INVALID_STATE;
+        }
         if (!rs02_zero_effort_feedback_is_safe(feedback, initial_position_rad)) {
             ESP_LOGE(
                 TAG,
@@ -537,14 +583,20 @@ static esp_err_t run_zero_effort_phase(rs02_feedback_t *feedback)
     }
 }
 
-#if CONFIG_RS02_RUN_MOTION_TEST
+#if MOTION_CAPABLE_BUILD
 static esp_err_t check_motion_feedback(
     const rs02_feedback_t *feedback,
     float target_rad,
+    float torque_limit_nm,
+    float speed_limit_rad_s,
     const char *phase_label,
     const char *timing_label)
 {
-    if (rs02_motion_feedback_is_safe(feedback, target_rad)) {
+    if (rs02_motion_feedback_is_safe_with_limits(
+            feedback,
+            target_rad,
+            torque_limit_nm,
+            speed_limit_rad_s)) {
         return ESP_OK;
     }
 
@@ -567,9 +619,14 @@ static esp_err_t check_motion_feedback(
 
 static esp_err_t run_motion_phase(
     const char *label,
+    const char *web_phase,
     float start_rad,
     float end_rad,
     uint32_t duration_ms,
+    float effort_limit_nm,
+    float speed_limit_rad_s,
+    float progress_start,
+    float progress_span,
     rs02_feedback_t *feedback)
 {
     ESP_LOGI(
@@ -585,6 +642,10 @@ static esp_err_t run_motion_phase(
     uint32_t next_log_ms = 0U;
     TickType_t last_wake = xTaskGetTickCount();
     for (;;) {
+        if (control_abort_requested()) {
+            ESP_LOGW(TAG, "%s cancelled by the web-console safety gate", label);
+            return ESP_ERR_INVALID_STATE;
+        }
         float target_rad = 0.0f;
         float desired_velocity_rad_s = 0.0f;
         if (!rs02_motion_sample(
@@ -598,15 +659,22 @@ static esp_err_t run_motion_phase(
         }
 
         ESP_RETURN_ON_ERROR(
-            check_motion_feedback(feedback, target_rad, label, "pre-command"),
+            check_motion_feedback(
+                feedback,
+                target_rad,
+                effort_limit_nm,
+                speed_limit_rad_s,
+                label,
+                "pre-command"),
             TAG,
             "unsafe motion feedback before transmit");
 
         float estimated_effort_nm = 0.0f;
-        if (!rs02_motion_effort_is_safe(
+        if (!rs02_motion_effort_is_safe_with_limit(
                 feedback,
                 target_rad,
                 desired_velocity_rad_s,
+                effort_limit_nm,
                 &estimated_effort_nm)) {
             ESP_LOGE(
                 TAG,
@@ -620,6 +688,20 @@ static esp_err_t run_motion_phase(
                 (double)feedback->velocity_rad_s);
             return ESP_ERR_INVALID_STATE;
         }
+
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+        const float phase_progress = duration_ms == 0U
+                                         ? 1.0f
+                                         : fminf((float)elapsed_ms / (float)duration_ms, 1.0f);
+        rs02_web_console_update_motion(
+            web_phase,
+            target_rad,
+            progress_start + progress_span * phase_progress);
+#else
+        (void)web_phase;
+        (void)progress_start;
+        (void)progress_span;
+#endif
 
         rs02_frame_t frame = {0};
         if (!rs02_make_operation_control(
@@ -638,7 +720,13 @@ static esp_err_t run_motion_phase(
             TAG,
             "motion feedback timeout or fault");
         ESP_RETURN_ON_ERROR(
-            check_motion_feedback(feedback, target_rad, label, "post-command"),
+            check_motion_feedback(
+                feedback,
+                target_rad,
+                effort_limit_nm,
+                speed_limit_rad_s,
+                label,
+                "post-command"),
             TAG,
             "unsafe motion feedback after transmit");
 
@@ -667,36 +755,52 @@ static esp_err_t run_motion_phase(
     }
 }
 
-static esp_err_t run_motion_test(rs02_feedback_t *feedback)
+static esp_err_t run_motion_test(
+    rs02_feedback_t *feedback,
+    const rs02_motion_config_t *config,
+    float endpoint_rad)
 {
     const float origin_rad = feedback->position_rad;
-    float endpoint_rad = 0.0f;
-    if (!rs02_motion_endpoint(origin_rad, &endpoint_rad)) {
-        ESP_LOGE(TAG, "cannot choose motion endpoint from origin %.4f rad", (double)origin_rad);
+    const bool return_to_origin = config->return_to_origin;
+    if (!isfinite(endpoint_rad) || endpoint_rad < RS02_POSITION_MIN_RAD ||
+        endpoint_rad > RS02_POSITION_MAX_RAD) {
+        ESP_LOGE(TAG, "resolved motion endpoint %.4f rad is invalid", (double)endpoint_rad);
         return ESP_ERR_INVALID_ARG;
     }
 
     ESP_LOGW(
         TAG,
-        "motion test ENABLED: one %.1f degree out-and-back movement, Kp=%.1f Kd=%.1f",
-        (double)(RS02_MOTION_OFFSET_RAD * 180.0f / 3.14159265358979323846f),
+        "motion test ENABLED: one %.1f degree %s movement (%s), Kp=%.1f Kd=%.1f",
+        (double)fabsf((endpoint_rad - origin_rad) * 180.0f / 3.14159265358979323846f),
+        return_to_origin ? "out-and-back" : "one-way",
+        endpoint_rad < origin_rad ? "reverse" : "forward",
         (double)RS02_MOTION_KP,
         (double)RS02_MOTION_KD);
     ESP_RETURN_ON_ERROR(
         run_motion_phase(
             "motion outbound",
+            "outbound",
             origin_rad,
             endpoint_rad,
-            RS02_MOTION_LEG_DURATION_MS,
+            config->duration_ms,
+            config->torque_limit_nm,
+            config->speed_limit_rad_s,
+            0.0f,
+            return_to_origin ? 0.4f : 0.8f,
             feedback),
         TAG,
         "outbound motion failed");
     ESP_RETURN_ON_ERROR(
         run_motion_phase(
             "outbound settle",
+            "outbound-settle",
             endpoint_rad,
             endpoint_rad,
             RS02_MOTION_SETTLE_DURATION_MS,
+            config->torque_limit_nm,
+            config->speed_limit_rad_s,
+            return_to_origin ? 0.4f : 0.8f,
+            return_to_origin ? 0.1f : 0.2f,
             feedback),
         TAG,
         "outbound settle failed");
@@ -710,21 +814,40 @@ static esp_err_t run_motion_test(rs02_feedback_t *feedback)
         return ESP_ERR_INVALID_STATE;
     }
 
+    if (!return_to_origin) {
+        ESP_LOGI(
+            TAG,
+            "absolute target %.1f deg reached after signed %.1f-degree movement; stopping",
+            (double)config->angle_deg,
+            (double)config->planned_delta_deg);
+        return ESP_OK;
+    }
+
     ESP_RETURN_ON_ERROR(
         run_motion_phase(
             "motion return",
+            "return",
             endpoint_rad,
             origin_rad,
-            RS02_MOTION_LEG_DURATION_MS,
+            config->duration_ms,
+            config->torque_limit_nm,
+            config->speed_limit_rad_s,
+            0.5f,
+            0.4f,
             feedback),
         TAG,
         "return motion failed");
     ESP_RETURN_ON_ERROR(
         run_motion_phase(
             "return settle",
+            "return-settle",
             origin_rad,
             origin_rad,
             RS02_MOTION_SETTLE_DURATION_MS,
+            config->torque_limit_nm,
+            config->speed_limit_rad_s,
+            0.9f,
+            0.1f,
             feedback),
         TAG,
         "return settle failed");
@@ -741,16 +864,33 @@ static esp_err_t run_motion_test(rs02_feedback_t *feedback)
     ESP_LOGI(
         TAG,
         "%.1f-degree out-and-back motion test completed",
-        (double)(RS02_MOTION_OFFSET_RAD * 180.0f / 3.14159265358979323846f));
+        (double)config->angle_deg);
     return ESP_OK;
 }
 #endif
 
-static esp_err_t run_test_sequence(void)
+typedef struct {
+    rs02_feedback_t feedback;
+    float bus_voltage_v;
+    float mechanical_position_rad;
+    float current_single_turn_deg;
+    float motion_endpoint_rad;
+    rs02_motion_config_t motion_config;
+} rs02_motor_preflight_t;
+
+static esp_err_t inspect_motor_before_motion(
+    const rs02_motion_config_t *motion_config,
+    rs02_motor_preflight_t *result,
+    rs02_motion_config_error_t *config_error)
 {
     rs02_frame_t frame = {0};
     rs02_device_info_t device = {0};
     rs02_feedback_t feedback = {0};
+
+    if (result == NULL || config_error == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *config_error = RS02_MOTION_CONFIG_OK;
 
     ESP_RETURN_ON_ERROR(send_stop(false), TAG, "initial stop failed");
     ESP_RETURN_ON_ERROR(
@@ -800,16 +940,75 @@ static esp_err_t run_test_sequence(void)
         "mechanical-position parameter read failed");
     ESP_LOGI(TAG, "reported load-side mechanical position: %.4f rad",
              (double)mechanical_position_rad);
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+    rs02_web_console_update_bus(bus_voltage_v, mechanical_position_rad);
+#endif
+
+    result->feedback = feedback;
+    result->bus_voltage_v = bus_voltage_v;
+    result->mechanical_position_rad = mechanical_position_rad;
+
+#if MOTION_CAPABLE_BUILD
+    if (motion_config != NULL) {
+        result->motion_config = *motion_config;
+        if (!rs02_motion_config_resolve_endpoint(
+                feedback.position_rad,
+                mechanical_position_rad,
+                &result->motion_config,
+                &result->current_single_turn_deg,
+                &result->motion_endpoint_rad,
+                config_error)) {
+            ESP_LOGE(
+                TAG,
+                "motion request rejected before enable: control_origin=%.4f rad mechanical=%.4f rad, %s",
+                (double)feedback.position_rad,
+                (double)mechanical_position_rad,
+                rs02_motion_config_error_name(*config_error));
+            return ESP_ERR_INVALID_ARG;
+        }
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+        rs02_web_console_update_motion_plan(
+            result->current_single_turn_deg,
+            result->motion_config.angle_deg,
+            result->motion_config.planned_delta_deg,
+            &result->motion_config);
+#endif
+    }
+#endif
+
+    return ESP_OK;
+}
+
+static esp_err_t run_test_sequence(
+    const rs02_motion_config_t *motion_config,
+    rs02_motion_config_error_t *config_error)
+{
+    rs02_motor_preflight_t preflight = {0};
+    ESP_RETURN_ON_ERROR(
+        inspect_motor_before_motion(motion_config, &preflight, config_error),
+        TAG,
+        "motor preflight failed");
+
+    rs02_frame_t frame = {0};
+    rs02_feedback_t feedback = preflight.feedback;
+#if MOTION_CAPABLE_BUILD
+    const rs02_motion_config_t *resolved_motion_config =
+        motion_config != NULL ? &preflight.motion_config : NULL;
+#endif
 
     ESP_RETURN_ON_ERROR(
         select_operation_control_mode(),
         TAG,
         "operation-control mode selection failed");
-#if CONFIG_RS02_RUN_MOTION_TEST
-    ESP_RETURN_ON_ERROR(
-        configure_motion_torque_limit(),
-        TAG,
-        "motion torque-limit configuration failed");
+#if MOTION_CAPABLE_BUILD
+    if (resolved_motion_config != NULL) {
+        ESP_RETURN_ON_ERROR(
+            configure_motion_torque_limit(resolved_motion_config->torque_limit_nm),
+            TAG,
+            "motion torque-limit configuration failed");
+    }
+#else
+    (void)motion_config;
 #endif
 
     if (!rs02_make_enable(
@@ -834,8 +1033,16 @@ static esp_err_t run_test_sequence(void)
         log_bus_status();
     }
 
-#if CONFIG_RS02_RUN_MOTION_TEST
-    ESP_RETURN_ON_ERROR(run_motion_test(&feedback), TAG, "motion test failed");
+#if MOTION_CAPABLE_BUILD
+    if (resolved_motion_config != NULL) {
+        ESP_RETURN_ON_ERROR(
+            run_motion_test(
+                &feedback,
+                resolved_motion_config,
+                preflight.motion_endpoint_rad),
+            TAG,
+            "motion test failed");
+    }
 #endif
 
     ESP_RETURN_ON_ERROR(send_stop(false), TAG, "final stop failed");
@@ -851,6 +1058,159 @@ static esp_err_t run_test_sequence(void)
     return ESP_OK;
 }
 
+static esp_err_t execute_control_sequence(
+    const rs02_motion_config_t *motion_config,
+    bool preflight_only,
+    rs02_motion_config_error_t *config_error)
+{
+    if (config_error == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    *config_error = RS02_MOTION_CONFIG_OK;
+
+    esp_err_t err = rs02_twai_install(
+        (gpio_num_t)CONFIG_RS02_TWAI_TX_GPIO,
+        (gpio_num_t)CONFIG_RS02_TWAI_RX_GPIO);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "TWAI install failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    err = rs02_twai_start();
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "TWAI start failed: %s", esp_err_to_name(err));
+        rs02_twai_shutdown();
+        return err;
+    }
+
+    if (preflight_only) {
+        rs02_motor_preflight_t preflight = {0};
+        err = inspect_motor_before_motion(motion_config, &preflight, config_error);
+    } else {
+        err = run_test_sequence(motion_config, config_error);
+    }
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "%s aborted: %s", preflight_only ? "preflight" : "test", esp_err_to_name(err));
+        const esp_err_t stop_error = send_stop_best_effort();
+        if (stop_error != ESP_OK) {
+            ESP_LOGE(
+                TAG,
+                "best-effort stop was not confirmed: %s; disconnect motor power",
+                esp_err_to_name(stop_error));
+        }
+    } else if (preflight_only) {
+        ESP_LOGI(TAG, "motor preflight completed; motor remains in Reset mode");
+    } else {
+        ESP_LOGI(TAG, "test sequence completed and stop feedback was received");
+    }
+
+    const esp_err_t shutdown_error = rs02_twai_shutdown();
+    if (shutdown_error != ESP_OK) {
+        ESP_LOGE(TAG, "TWAI shutdown failed: %s", esp_err_to_name(shutdown_error));
+        if (err == ESP_OK) {
+            err = shutdown_error;
+        }
+    }
+    ESP_LOGI(TAG, "TWAI is shut down; remove RS02 motor power before rewiring");
+    return err;
+}
+
+static esp_err_t execute_test_sequence(
+    const rs02_motion_config_t *motion_config,
+    rs02_motion_config_error_t *config_error)
+{
+    return execute_control_sequence(motion_config, false, config_error);
+}
+
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+static esp_err_t execute_preflight_sequence(
+    const rs02_motion_config_t *motion_config,
+    rs02_motion_config_error_t *config_error)
+{
+    return execute_control_sequence(motion_config, true, config_error);
+}
+#endif
+
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+static void run_web_console_mode(void)
+{
+    const esp_err_t web_error = rs02_web_console_start();
+    if (web_error != ESP_OK) {
+        ESP_LOGE(TAG, "web console start failed: %s", esp_err_to_name(web_error));
+        return;
+    }
+
+    ESP_LOGW(TAG, "web console ready; reset cannot start motion, click confirmation is required");
+
+    for (;;) {
+        rs02_web_console_tick();
+        rs02_motion_config_t config = {0};
+        if (rs02_web_console_take_prepare_request(&config)) {
+            ESP_LOGI(
+                TAG,
+                "web preflight requested: target_angle=%.1f deg duration=%" PRIu32
+                " ms torque_limit=%.2f N m speed_limit=%.2f rad/s",
+                (double)config.angle_deg,
+                config.duration_ms,
+                (double)config.torque_limit_nm,
+                (double)config.speed_limit_rad_s);
+            rs02_motion_config_error_t config_error = RS02_MOTION_CONFIG_OK;
+            const esp_err_t preflight_error = execute_preflight_sequence(&config, &config_error);
+            if (preflight_error == ESP_OK) {
+                rs02_web_console_finish_preflight(
+                    true,
+                    "Absolute single-turn target passed. Review the current angle, direction, and target, then start within 30 seconds.");
+            } else if (config_error == RS02_MOTION_CONFIG_ENDPOINT_RANGE) {
+                rs02_web_console_finish_preflight(
+                    false,
+                    "A valid single-turn endpoint could not be planned from the current RS02 position.");
+            } else {
+                char message[192] = {0};
+                snprintf(
+                    message,
+                    sizeof(message),
+                    "Motor preflight failed (%s). Check power, CAN wiring, and the serial log.",
+                    esp_err_to_name(preflight_error));
+                rs02_web_console_finish_preflight(false, message);
+            }
+        }
+        if (rs02_web_console_take_start_request(&config)) {
+            ESP_LOGW(
+                TAG,
+                "web confirmation accepted: target_angle=%.1f deg duration=%" PRIu32
+                " ms torque_limit=%.2f N m speed_limit=%.2f rad/s",
+                (double)config.angle_deg,
+                config.duration_ms,
+                (double)config.torque_limit_nm,
+                (double)config.speed_limit_rad_s);
+            rs02_motion_config_error_t config_error = RS02_MOTION_CONFIG_OK;
+            const esp_err_t test_error = execute_test_sequence(&config, &config_error);
+            if (test_error == ESP_OK) {
+                rs02_web_console_set_state(
+                    RS02_WEB_STATE_COMPLETE,
+                    "Target position reached without return; Reset-mode stop was confirmed.");
+            } else {
+                char message[192] = {0};
+                if (config_error == RS02_MOTION_CONFIG_ENDPOINT_RANGE) {
+                    snprintf(
+                        message,
+                        sizeof(message),
+                        "Motor position changed after preflight and the requested angle no longer fits. Adjust a slider to recheck it.");
+                } else {
+                    snprintf(
+                        message,
+                        sizeof(message),
+                        "Test stopped or failed (%s). Check the serial log before retrying.",
+                        esp_err_to_name(test_error));
+                }
+                rs02_web_console_set_state(RS02_WEB_STATE_FAULT, message);
+            }
+        }
+        vTaskDelay(pdMS_TO_TICKS(20));
+    }
+}
+#endif
+
 void app_main(void)
 {
     const esp_reset_reason_t reset_reason = esp_reset_reason();
@@ -859,46 +1219,25 @@ void app_main(void)
     ESP_LOGI(
         TAG,
         "TWAI 1 Mbit/s at 80%% sample point, TX GPIO%d, RX GPIO%d, motor=0x%02x, "
-        "host=0x%02x, link_soak=%s, motion=%s",
+        "host=0x%02x, link_soak=%s, motion=%s, web=%s",
         CONFIG_RS02_TWAI_TX_GPIO,
         CONFIG_RS02_TWAI_RX_GPIO,
         CONFIG_RS02_MOTOR_ID,
         CONFIG_RS02_HOST_ID,
         LINK_SOAK_TEST_STATUS,
-        MOTION_TEST_STATUS);
+        MOTION_TEST_STATUS,
+        WEB_CONSOLE_STATUS);
 
-    esp_err_t err = rs02_twai_install(
-        (gpio_num_t)CONFIG_RS02_TWAI_TX_GPIO,
-        (gpio_num_t)CONFIG_RS02_TWAI_RX_GPIO);
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "TWAI install failed: %s", esp_err_to_name(err));
-        return;
-    }
-
-    err = rs02_twai_start();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "TWAI start failed: %s", esp_err_to_name(err));
-        rs02_twai_shutdown();
-        return;
-    }
-
-    err = run_test_sequence();
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "test aborted: %s", esp_err_to_name(err));
-        const esp_err_t stop_error = send_stop_best_effort();
-        if (stop_error != ESP_OK) {
-            ESP_LOGE(
-                TAG,
-                "best-effort stop was not confirmed: %s; disconnect motor power",
-                esp_err_to_name(stop_error));
-        }
-    } else {
-        ESP_LOGI(TAG, "test sequence completed and stop feedback was received");
-    }
-
-    const esp_err_t shutdown_error = rs02_twai_shutdown();
-    if (shutdown_error != ESP_OK) {
-        ESP_LOGE(TAG, "TWAI shutdown failed: %s", esp_err_to_name(shutdown_error));
-    }
-    ESP_LOGI(TAG, "TWAI is shut down; remove RS02 motor power before rewiring");
+#if CONFIG_RS02_RUN_WEB_CONSOLE
+    run_web_console_mode();
+#else
+#if CONFIG_RS02_RUN_MOTION_TEST
+    const rs02_motion_config_t motion_config = rs02_motion_config_default();
+    rs02_motion_config_error_t config_error = RS02_MOTION_CONFIG_OK;
+    (void)execute_test_sequence(&motion_config, &config_error);
+#else
+    rs02_motion_config_error_t config_error = RS02_MOTION_CONFIG_OK;
+    (void)execute_test_sequence(NULL, &config_error);
+#endif
+#endif
 }
