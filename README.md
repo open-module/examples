@@ -9,6 +9,7 @@ Each example lives in its own top-level directory and documents its dependencies
 ## Examples
 
 - [`esp32-cybergear-can/`](esp32-cybergear-can/) — ESP32-S3, SN65HVD230, and CyberGear physical 1 Mbit/s CAN experiment.
+- [`esp32-RobStride02-can/`](esp32-RobStride02-can/) — Fail-closed ESP32-S3 and RobStride RS02 1 Mbit/s CAN communication example.
 
 ## Hardware references
 

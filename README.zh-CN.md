@@ -9,6 +9,7 @@
 ## 例程
 
 - [`esp32-cybergear-can/`](esp32-cybergear-can/) — ESP32-S3、SN65HVD230 与 CyberGear 的 1 Mbit/s CAN 实体实验。
+- [`esp32-RobStride02-can/`](esp32-RobStride02-can/) — ESP32-S3 与 RobStride RS02 的故障关闭式 1 Mbit/s CAN 通信例程。
 
 ## 硬件资料
 

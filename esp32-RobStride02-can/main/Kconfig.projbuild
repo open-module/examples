@@ -1,0 +1,53 @@
+menu "RobStride RS02 CAN example"
+
+    config RS02_MOTOR_ID
+        int "RobStride RS02 motor CAN ID"
+        range 0 255
+        default 127
+        help
+            Target RobStride RS02 motor CAN ID. A factory-default motor normally uses 127 (0x7F).
+
+    config RS02_HOST_ID
+        int "ESP32 host CAN ID"
+        range 0 255
+        default 253
+        help
+            Host CAN ID placed in enable, stop, and feedback frames. The example default is 253 (0xFD).
+
+    config RS02_TWAI_TX_GPIO
+        int "TWAI TX GPIO"
+        range 0 48
+        default 4
+
+    config RS02_TWAI_RX_GPIO
+        int "TWAI RX GPIO"
+        range 0 48
+        default 5
+
+    config RS02_RUN_LINK_SOAK_TEST
+        bool "Run a 60-second zero-effort CAN link soak test"
+        default n
+        help
+            Diagnostic mode for intermittent CAN receive errors. It keeps the measured initial
+            position as the target and sends 50 Hz control frames for 60 seconds with desired
+            velocity, feed-forward torque, Kp, and Kd all zero. Existing feedback, tracking,
+            temperature, and fatal TWAI checks remain active. This mode does not command motion,
+            but the motor is enabled during the test and software checks do not replace a physical
+            power cutoff. Keep the motion test disabled while collecting a link-soak log.
+
+    config RS02_RUN_MOTION_TEST
+        bool "Explicitly run one 60-degree out-and-back motion test"
+        depends on !RS02_RUN_LINK_SOAK_TEST
+        default n
+        help
+            WARNING: this option commands physical movement. Secure and unload the RS02,
+            clear at least 60 degrees in either direction, use a current-limited supply, and
+            keep a physical power cutoff within reach. After the 500 ms zero-effort check,
+            the target follows a smooth 60-degree trajectory over 3 seconds, settles for
+            700 ms, returns over 3 seconds, settles again, and stops. Kp is 12.0, Kd is 1.0,
+            and feed-forward torque is zero. Provisional software guards reject absolute
+            speed at 0.8 rad/s, feedback torque at 1.5 N m, estimated controller effort at
+            1.0 N m, tracking error at 0.075 rad, or endpoint error at 0.035 rad. These are
+            software observations and estimates, not certified or hardware safety limits.
+
+endmenu
